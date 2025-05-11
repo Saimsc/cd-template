@@ -6,6 +6,13 @@ on:
                 required: true
                 type: string
                 default: test
+            deployment:
+                required: true
+                type: string
+            build_code:
+                required: true
+                type: string
+                
 jobs:
 
  print_input:
