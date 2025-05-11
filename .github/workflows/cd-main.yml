@@ -24,6 +24,8 @@ jobs:
           id: get-input
           run: |
             echo "environment   =${{inputs.environment}}"      
+            echo "Deployment   =${{inputs.eployment}}"   
+            echo "Build_code   =${{inputs.build_code}}"               
  
  run-shell-command:
     name: Run shell command
