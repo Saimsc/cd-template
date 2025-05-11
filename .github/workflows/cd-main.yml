@@ -24,7 +24,7 @@ jobs:
           id: get-input
           run: |
             echo "environment   =${{inputs.environment}}"      
-            echo "Deployment   =${{inputs.eployment}}"   
+            echo "Deployment   =${{inputs.deployment}}"   
             echo "Build_code   =${{inputs.build_code}}"               
  
  run-shell-command:
