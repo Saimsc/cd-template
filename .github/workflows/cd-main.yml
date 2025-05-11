@@ -1,0 +1,28 @@
+name: run reusable workflow
+on:
+    workflow_call:
+        inputs:
+            environment:
+                required: true
+                type: string
+                default: test
+jobs:
+
+ print_input:
+    name: print inputvalues
+    runs-on: ubuntu-latest
+    steps:
+        - name: input-values
+          shell: 'bash'
+          id: get-input
+          run: |
+            echo "environment   =${{inputs.environment}}"      
+ 
+ run-shell-command:
+    name: Run shell command
+    runs-on: ubuntu-latest
+    steps:
+       - name: Echo a string
+         run: echo "Hello this is a first job"
+       - name: Run a pipeleine
+         run: echo "This iakanvsdvmsdlkvm s"
