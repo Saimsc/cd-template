@@ -47,14 +47,14 @@ jobs:
       # Build Code
       # --------------------
       - name: Setup JDK 17
-        if: ${{ inputs.build_code == true }}
+        if: ${{ inputs.build_code == 'true' }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
       - name: Build Code
-        if: ${{ inputs.build_code == true }}
+        if: ${{ inputs.build_code == 'true' }}
         run: |
           echo "Building Java application..."
           ./mvnw clean package -DskipTests
@@ -64,7 +64,7 @@ jobs:
       # Docker
       # --------------------
       - name: Docker Build
-        if: ${{ inputs.build_docker == true }}
+        if: ${{ inputs.build_docker == 'true' }}
         run: |
           IMAGE="${{ inputs.image_name }}:${{ inputs.image_tag }}"
           echo "Building Docker image: $IMAGE"
@@ -72,7 +72,7 @@ jobs:
           echo "FINAL_IMAGE=$IMAGE" >> $GITHUB_ENV
 
       - name: Use Fallback Image
-        if: ${{ inputs.build_docker != true }}
+        if: ${{ inputs.build_docker != 'true' }}
         run: |
           IMAGE="${{ inputs.fallback_image }}:${{ inputs.image_tag }}"
           echo "Using fallback image: $IMAGE"
@@ -82,20 +82,20 @@ jobs:
       # CodeQL
       # --------------------
       - name: Initialize CodeQL
-        if: ${{ inputs.codeql == true }}
+        if: ${{ inputs.codeql == 'true' }}
         uses: github/codeql-action/init@v3
         with:
           languages: java
 
       - name: Perform CodeQL Analysis
-        if: ${{ inputs.codeql == true }}
+        if: ${{ inputs.codeql == 'true' }}
         uses: github/codeql-action/analyze@v3
 
       # --------------------
       # Helm Deploy
       # --------------------
       - name: Deploy with Helm
-        if: ${{ inputs.deploy == true }}
+        if: ${{ inputs.deploy == 'true' }}
         run: |
           echo "Deploying Helm release: ${{ inputs.helm_release_name }}"
           echo "Using image: $FINAL_IMAGE"
