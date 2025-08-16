@@ -50,7 +50,7 @@ jobs:
 
     - name: Deploy with Helm to KinD
       run: |
-        helm upgrade --install springboot ./helm/springboot-app
+        helm upgrade --install springboot ./demo
         kubectl rollout status deployment/springboot
         kubectl get svc
 
