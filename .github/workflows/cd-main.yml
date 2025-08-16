@@ -58,16 +58,19 @@ jobs:
           echo "Build completed ✅"
 
       - name: Docker Build
+        if: ${{ inputs.build_docker }}
         run: |
-          if [ "${{ inputs.build_docker }}" = "true" ]; then
-            echo "Building Docker image: ${{ inputs.image_name }}:${{ inputs.image_tag }}"
-            docker build -t ${{ inputs.image_name }}:${{ inputs.image_tag }} .
-            echo "FINAL_IMAGE=${{ inputs.image_name }}" >> $GITHUB_ENV
-          else
-            echo "Using fallback image: ${{ inputs.fallback_image }}:${{ inputs.image_tag }}"
-            docker build -t ${{ inputs.fallback_image }}:${{ inputs.image_tag }} .
-            echo "FINAL_IMAGE=${{ inputs.fallback_image }}" >> $GITHUB_ENV
-          fi
+          IMAGE="${{ inputs.image_name }}:${{ inputs.image_tag }}"
+          echo "Building Docker image: $IMAGE"
+          docker build -t $IMAGE .
+          echo "FINAL_IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Use Fallback Image
+        if: ${{ !inputs.build_docker }}
+        run: |
+          IMAGE="${{ inputs.fallback_image }}:${{ inputs.image_tag }}"
+          echo "Using fallback image: $IMAGE"
+          echo "FINAL_IMAGE=$IMAGE" >> $GITHUB_ENV
 
       - name: Initialize CodeQL
         if: ${{ inputs.codeql }}
@@ -83,8 +86,8 @@ jobs:
         if: ${{ inputs.deploy }}
         run: |
           echo "Deploying Helm release: ${{ inputs.helm_release_name }}"
-          echo "Using image: $FINAL_IMAGE:${{ inputs.image_tag }}"
+          echo "Using image: $FINAL_IMAGE"
           helm upgrade --install ${{ inputs.helm_release_name }} \
             ${{ inputs.helm_chart_path }} \
-            --set image.repository=$FINAL_IMAGE \
-            --set image.tag=${{ inputs.image_tag }}
+            --set image.repository=$(echo $FINAL_IMAGE | cut -d: -f1) \
+            --set image.tag=$(echo $FINAL_IMAGE | cut -d: -f2)
