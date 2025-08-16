@@ -36,8 +36,10 @@ jobs:
         sudo mv kubectl /usr/local/bin/
 
     - name: Build Docker image
-      run: docker build -t demo:latest .
-
+      run: | 
+        docker build -t demo:latest .
+        echo "Display images"
+        docker images  
     - name: Load Docker image into kind
       run: kind load docker-image demo:latest
 
@@ -46,22 +48,29 @@ jobs:
         kubectl apply -f K8s/deployment.yaml
         kubectl apply -f K8s/service.yaml
 
-    - name: Create Helm Chart
+    - name: Deploy with Helm to KinD
       run: |
-        mkdir -p helm
-        cd helm
-        helm create demo
-    - name: Package Helm Chart
-      run: |
-        cd helm
-        helm package demo
-        ls -lh demo-*.tgz
+        helm upgrade --install springboot ./helm/springboot-app
+        kubectl rollout status deployment/springboot
+        kubectl get svc
 
-    - name: Upload Helm Chart as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: helm-chart
-        path: helm/demo-*.tgz
+
+    # - name: Create Helm Chart
+    #   run: |
+    #     mkdir -p helm
+    #     cd helm
+    #     helm create demo
+    # - name: Package Helm Chart
+    #   run: |
+    #     cd helm
+    #     helm package demo
+    #     ls -lh demo-*.tgz
+
+    # - name: Upload Helm Chart as Artifact
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: helm-chart
+    #     path: helm/demo-*.tgz
 
 
 
