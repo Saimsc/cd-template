@@ -15,3 +15,13 @@ containerPort: 8080
 serviceAccount:
   create: false
   name: ""
+
+ingress:
+  enabled: false
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - /
+  tls: []
+
