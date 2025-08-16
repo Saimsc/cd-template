@@ -1,100 +1,107 @@
-name: CICD TEMPLATE VER1.5
+name: Reusable CI/CD
 
 on:
   workflow_call:
     inputs:
-      build_code:      { type: string, required: true }
-      build_docker:    { type: string, required: true }
-      codeql:          { type: string, required: true }
-      deploy:          { type: string, required: true }
-
-      application_name:{ type: string, required: false, default: "app" }
-      image_tag:       { type: string, required: true }
-
-      # Helm
-      release_name:    { type: string, required: true }
-      chart_path:      { type: string, required: true }   # path to Helm chart dir
-      values_file:     { type: string, required: true }   # path to main repo’s values.yaml
-
-      codeql_languages:{ type: string, required: false, default: "java" }
-
-permissions:
-  contents: read
-  security-events: write
+      build_code:
+        required: true
+        type: string
+      build_docker:
+        required: true
+        type: string
+      codeql:
+        required: true
+        type: string
+      deploy:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
 
 jobs:
-  build:
+  build-code:
     if: ${{ inputs.build_code == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-      - run: mvn -B -ntp -DskipTests package
+          java-version: 17
 
-  docker:
-    if: ${{ inputs.build_docker == 'true' }}
-    needs: [build]
+      - name: Build Code
+        run: |
+          echo "Building Java application..."
+          ./mvnw clean package -DskipTests
+          echo "Build completed ✅"
+
+  docker-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Build Docker image (local only)
-        env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
-          APP_NAME:  ${{ inputs.application_name }}
-        run: |
-          IMAGE="$APP_NAME:$IMAGE_TAG"
-          echo "Building local Docker image: $IMAGE"
-          docker build -t "$IMAGE" .
-          kind_image=$IMAGE
-          echo "image_full=$kind_image" >> $GITHUB_OUTPUT
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  codeql-scan:
+      - name: Docker Build
+        run: |
+          if [ "${{ inputs.build_docker }}" == "true" ]; then
+            echo "Building Docker image for commitbooking..."
+            docker build -t commitbooking:${{ inputs.image_tag }} .
+          else
+            echo "Using fallback nginx image..."
+            docker build -t nginx:${{ inputs.image_tag }} .
+          fi
+
+  codeql-analysis:
     if: ${{ inputs.codeql == 'true' }}
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
         with:
-          languages: ${{ inputs.codeql_languages }}
-      - uses: github/codeql-action/autobuild@v3
-      - uses: github/codeql-action/analyze@v3
-        with:
-          category: "/language:${{ inputs.codeql_languages }}"
+          languages: java
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
 
   deploy:
     if: ${{ inputs.deploy == 'true' }}
-    needs: [docker]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install KinD
-        uses: helm/kind-action@v1
-        with:
-          version: v0.22.0
-          cluster_name: cicd-kind
-
-      - name: Load local image into KinD
         run: |
-          IMAGE="${{ needs.docker.outputs.image_full }}"
-          kind load docker-image "$IMAGE" --name cicd-kind
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.14.4
+      - name: Create KinD Cluster
+        run: kind create cluster --name ci-cd-cluster
 
-      - name: Replace chart values.yaml with main repo values
+      - name: Install Helm
         run: |
-          cp "${{ inputs.values_file }}" "${{ inputs.chart_path }}/values.yaml"
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-      - name: Helm upgrade/install into KinD
+      - name: Replace Helm Values
         run: |
-          helm upgrade --install "${{ inputs.release_name }}" "${{ inputs.chart_path }}" \
-            --namespace "default" --create-namespace
+          cp values.json demo/values.yaml
+          echo "Replaced demo/values.yaml ✅"
 
-      - name: Verify pods
-        run: kubectl get pods -A
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install commitbooking ./demo \
+            --namespace default \
+            --create-namespace \
+            --set image.tag=${{ inputs.image_tag }}
