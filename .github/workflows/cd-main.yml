@@ -37,11 +37,11 @@ jobs:
 
     - name: Build Docker image
       run: | 
-        docker build -t demo:latest .
+        docker build -t springboot-app:local .
         echo "Display images"
         docker images  
     - name: Load Docker image into kind
-      run: kind load docker-image demo:latest
+      run: kind load docker-image springboot-app:local
 
     # - name: Deploy App and Ingress
     #   run: |
