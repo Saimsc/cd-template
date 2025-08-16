@@ -1,39 +1,57 @@
-name: Reusable CI/CD
+name: CD Main Workflow
 
 on:
   workflow_call:
     inputs:
       build_code:
-        required: true
-        type: string
+        type: boolean
+        default: true
       build_docker:
-        required: true
-        type: string
+        type: boolean
+        default: true
       codeql:
-        required: true
-        type: string
+        type: boolean
+        default: false
       deploy:
-        required: true
-        type: string
+        type: boolean
+        default: false
       image_tag:
-        required: true
         type: string
+        required: true
+      image_name:
+        type: string
+        default: commitbooking
+      fallback_image:
+        type: string
+        default: nginx   # 👈 used if build_docker=false
+      helm_chart_path:
+        type: string
+        default: ./demo  # 👈 your helm folder
+      helm_release_name:
+        type: string
+        default: demo
 
 jobs:
-  build-code:
-    if: ${{ inputs.build_code == 'true' }}
+  ci-cd:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup JDK 17
+        if: ${{ inputs.build_code }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
       - name: Build Code
+        if: ${{ inputs.build_code }}
         run: |
           echo "Building Java application..."
           ./mvnw clean package -DskipTests
@@ -41,61 +59,32 @@ jobs:
 
       - name: Docker Build
         run: |
-          if [ "${{ inputs.build_docker }}" == "true" ]; then
-            echo "Building Docker image for commitbooking..."
-            docker build -t commitbooking:${{ inputs.image_tag }} .
+          if [ "${{ inputs.build_docker }}" = "true" ]; then
+            echo "Building Docker image: ${{ inputs.image_name }}:${{ inputs.image_tag }}"
+            docker build -t ${{ inputs.image_name }}:${{ inputs.image_tag }} .
+            echo "FINAL_IMAGE=${{ inputs.image_name }}" >> $GITHUB_ENV
           else
-            echo "Using fallback nginx image..."
-            docker build -t nginx:${{ inputs.image_tag }} .
+            echo "Using fallback image: ${{ inputs.fallback_image }}:${{ inputs.image_tag }}"
+            docker build -t ${{ inputs.fallback_image }}:${{ inputs.image_tag }} .
+            echo "FINAL_IMAGE=${{ inputs.fallback_image }}" >> $GITHUB_ENV
           fi
 
-  codeql-analysis:
-    if: ${{ inputs.codeql == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Initialize CodeQL
+        if: ${{ inputs.codeql }}
         uses: github/codeql-action/init@v3
         with:
           languages: java
 
       - name: Perform CodeQL Analysis
+        if: ${{ inputs.codeql }}
         uses: github/codeql-action/analyze@v3
 
-  deploy:
-    if: ${{ inputs.deploy == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install KinD
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-
-      - name: Create KinD Cluster
-        run: kind create cluster --name ci-cd-cluster
-
-      - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Replace Helm Values
-        run: |
-          cp values.json demo/values.yaml
-          echo "Replaced demo/values.yaml ✅"
-
       - name: Deploy with Helm
+        if: ${{ inputs.deploy }}
         run: |
-          helm upgrade --install commitbooking ./demo \
-            --namespace default \
-            --create-namespace \
+          echo "Deploying Helm release: ${{ inputs.helm_release_name }}"
+          echo "Using image: $FINAL_IMAGE:${{ inputs.image_tag }}"
+          helm upgrade --install ${{ inputs.helm_release_name }} \
+            ${{ inputs.helm_chart_path }} \
+            --set image.repository=$FINAL_IMAGE \
             --set image.tag=${{ inputs.image_tag }}
