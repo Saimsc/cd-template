@@ -23,10 +23,10 @@ on:
         default: commitbooking
       fallback_image:
         type: string
-        default: nginx   # 👈 used if build_docker=false
+        default: nginx
       helm_chart_path:
         type: string
-        default: ./demo  # 👈 your helm folder
+        default: ./demo
       helm_release_name:
         type: string
         default: demo
@@ -43,22 +43,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # --------------------
+      # Build Code
+      # --------------------
       - name: Setup JDK 17
-        if: ${{ inputs.build_code }}
+        if: ${{ inputs.build_code == true }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
       - name: Build Code
-        if: ${{ inputs.build_code }}
+        if: ${{ inputs.build_code == true }}
         run: |
           echo "Building Java application..."
           ./mvnw clean package -DskipTests
           echo "Build completed ✅"
 
+      # --------------------
+      # Docker
+      # --------------------
       - name: Docker Build
-        if: ${{ inputs.build_docker }}
+        if: ${{ inputs.build_docker == true }}
         run: |
           IMAGE="${{ inputs.image_name }}:${{ inputs.image_tag }}"
           echo "Building Docker image: $IMAGE"
@@ -66,24 +72,30 @@ jobs:
           echo "FINAL_IMAGE=$IMAGE" >> $GITHUB_ENV
 
       - name: Use Fallback Image
-        if: ${{ !inputs.build_docker }}
+        if: ${{ inputs.build_docker != true }}
         run: |
           IMAGE="${{ inputs.fallback_image }}:${{ inputs.image_tag }}"
           echo "Using fallback image: $IMAGE"
           echo "FINAL_IMAGE=$IMAGE" >> $GITHUB_ENV
 
+      # --------------------
+      # CodeQL
+      # --------------------
       - name: Initialize CodeQL
-        if: ${{ inputs.codeql }}
+        if: ${{ inputs.codeql == true }}
         uses: github/codeql-action/init@v3
         with:
           languages: java
 
       - name: Perform CodeQL Analysis
-        if: ${{ inputs.codeql }}
+        if: ${{ inputs.codeql == true }}
         uses: github/codeql-action/analyze@v3
 
+      # --------------------
+      # Helm Deploy
+      # --------------------
       - name: Deploy with Helm
-        if: ${{ inputs.deploy }}
+        if: ${{ inputs.deploy == true }}
         run: |
           echo "Deploying Helm release: ${{ inputs.helm_release_name }}"
           echo "Using image: $FINAL_IMAGE"
