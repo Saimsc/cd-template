@@ -43,10 +43,10 @@ jobs:
     - name: Load Docker image into kind
       run: kind load docker-image demo:latest
 
-    - name: Deploy App and Ingress
-      run: |
-        kubectl apply -f K8s/deployment.yaml
-        kubectl apply -f K8s/service.yaml
+    # - name: Deploy App and Ingress
+    #   run: |
+    #     kubectl apply -f K8s/deployment.yaml
+    #     kubectl apply -f K8s/service.yaml
 
     - name: Deploy with Helm to KinD
       run: |
