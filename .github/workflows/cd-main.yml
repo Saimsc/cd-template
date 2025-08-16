@@ -54,7 +54,6 @@ jobs:
 
     - name: List the Pods
       run: |
-        kubectl rollout status deployment/springboot
         kubectl get svc
         kubectl get pods
     # - name: Create Helm Chart
