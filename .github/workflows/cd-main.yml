@@ -57,7 +57,7 @@ jobs:
         if: ${{ inputs.build_code == 'true' }}
         run: |
           echo "Building Java application..."
-          ./mvnw clean package -DskipTests
+          mvn clean package -DskipTests
           echo "Build completed ✅"
 
       # --------------------
