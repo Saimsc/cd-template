@@ -4,17 +4,17 @@ on:
   workflow_call:
     inputs:
       build_code:
-        type: boolean
+        type: string
         default: true
       build_docker:
-        type: boolean
+        type: string
         default: true
       codeql:
-        type: boolean
-        default: false
+        type: string
+        default: true
       deploy:
         type: boolean
-        default: false
+        default: true
       image_tag:
         type: string
         required: true
