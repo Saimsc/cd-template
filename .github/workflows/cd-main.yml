@@ -13,7 +13,7 @@ on:
         type: string
         default: true
       deploy:
-        type: boolean
+        type: string
         default: true
       image_tag:
         type: string
