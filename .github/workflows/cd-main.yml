@@ -1,100 +1,160 @@
-name: Spring Boot CI/CD with kind and ngrok
+name: CICD TEMPLATE VER1.2
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      # control flags (passed as strings "true"/"false")
+      build_code:      { type: string, required: true }
+      build_docker:    { type: string, required: true }
+      codeql:          { type: string, required: true }
+      deploy:          { type: string, required: true }
+
+      # build/deploy context
+      application_name:{ type: string, required: false, default: "app" }
+      image_tag:       { type: string, required: true }
+      ecr_repo:        { type: string, required: true }     # e.g. "commitbooking"
+      aws_region:      { type: string, required: true }
+      aws_role_arn:    { type: string, required: true }     # OIDC role to assume
+
+      # k8s/helm
+      eks_cluster:     { type: string, required: true }
+      namespace:       { type: string, required: true }
+      release_name:    { type: string, required: true }     # helm release
+      chart_path:      { type: string, required: true }     # e.g. "helm/commitbooking"
+
+      # values pulled by main workflow from values.json
+      replica_count:   { type: string, required: true }
+      autoscaling:     { type: string, required: true }      # "true"/"false"
+      service_type:    { type: string, required: true }      # e.g. "ClusterIP"|"NodePort"|"LoadBalancer"
+      ingress_enabled: { type: string, required: true }      # "true"/"false"
+
+      # CodeQL specifics
+      codeql_languages:{ type: string, required: false, default: "java" }  # comma-separated if multiple
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write   # needed for CodeQL
 
 jobs:
-  build-and-deploy:
+  # Optional: compile/unit test, controlled by build_code
+  build:
+    if: ${{ inputs.build_code == 'true' }}
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      # Example Java build – adjust for your stack (Maven/Gradle/Node/etc.)
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-    - name: Build with Maven
-      run: mvn clean package -DskipTests
+      - name: Build (Maven example)
+        run: mvn -B -ntp -DskipTests package
 
-    - name: Install kind
-      run: |
-        curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
-        chmod +x ./kind
-        sudo mv ./kind /usr/local/bin/kind
+  docker:
+    if: ${{ inputs.build_docker == 'true' }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Create kind cluster
-      run: kind create cluster --wait 60s
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region:     ${{ inputs.aws_region }}
 
-    - name: Install kubectl
-      run: |
-        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build Docker image
-      run: docker build -t demo:latest .
+      - name: Build & Push Docker image
+        env:
+          ECR_REGISTRY:   ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repo }}
+          IMAGE_TAG:      ${{ inputs.image_tag }}
+        run: |
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "Building $IMAGE"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "image_full=$IMAGE" >> $GITHUB_OUTPUT
 
-    - name: Load Docker image into kind
-      run: kind load docker-image demo:latest
+  codeql-scan:
+    if: ${{ inputs.codeql == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Deploy App and Ingress
-      run: |
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ inputs.codeql_languages }}
 
+      # For Java/JS this usually works. For custom builds replace with your build commands.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
 
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ inputs.codeql_languages }}"
 
+  deploy:
+    if: ${{ inputs.deploy == 'true' }}
+    needs: [docker]   # ensures we only deploy after image is pushed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region:     ${{ inputs.aws_region }}
 
+      - name: Login to Amazon ECR (to get registry URL)
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name "${{ inputs.eks_cluster }}" --region "${{ inputs.aws_region }}"
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
 
+      - name: Create Helm override file
+        id: overrides
+        env:
+          ECR_REGISTRY:   ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repo }}
+          IMAGE_TAG:      ${{ inputs.image_tag }}
+          REPLICA_COUNT:  ${{ inputs.replica_count }}
+          AUTOSCALING:    ${{ inputs.autoscaling }}
+          SERVICE_TYPE:   ${{ inputs.service_type }}
+          INGRESS:        ${{ inputs.ingress_enabled }}
+        run: |
+          cat > override-values.yaml <<'YAML'
+          replicaCount: ${REPLICA_COUNT}
+          autoscaling:
+            enabled: ${AUTOSCALING}
+          service:
+            type: ${SERVICE_TYPE}
+          ingress:
+            enabled: ${INGRESS}
+          image:
+            repository: ${ECR_REGISTRY}/${ECR_REPOSITORY}
+            tag: ${IMAGE_TAG}
+          YAML
+          echo "override_file=override-values.yaml" >> $GITHUB_OUTPUT
 
-
-
-
-
-
-
-
-# name: run reusable workflow
-# on:
-#     workflow_call:
-#         inputs:
-#             environment:
-#                 required: true
-#                 type: string
-#                 default: test
-#             deployment:
-#                 required: true
-#                 type: string
-#             build_code:
-#                 required: true
-#                 type: string
-                
-# jobs:
-
-#  print_input:
-#     name: print inputvalues
-#     runs-on: ubuntu-latest
-#     steps:
-#         - name: input-values
-#           shell: 'bash'
-#           id: get-input
-#           run: |
-#             echo "environment   =${{inputs.environment}}"      
-#             echo "Deployment   =${{inputs.deployment}}"   
-#             echo "Build_code   =${{inputs.build_code}}"               
- 
-#  run-shell-command:
-#     name: Run shell command
-#     runs-on: ubuntu-latest
-#     steps:
-#        - name: Echo a string
-#          run: echo "Hello this is a first job"
-#        - name: Run a pipeleine
-#          run: echo "This iakanvsdvmsdlkvm s"
+      - name: Helm upgrade/install
+        run: |
+          helm upgrade --install "${{ inputs.release_name }}" "${{ inputs.chart_path }}" \
+            --namespace "${{ inputs.namespace }}" --create-namespace \
+            -f "${{ steps.overrides.outputs.override_file }}"
