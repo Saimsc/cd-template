@@ -11,3 +11,7 @@ service:
   nodePort: 30007
 
 containerPort: 8080
+
+serviceAccount:
+  create: false
+  name: ""
